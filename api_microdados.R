@@ -15,16 +15,11 @@ conexao <- dbConnect(
   #dataset = "br_me_cpnj"
 )
 
-tbl(conexao,"microdados_vinculos") %>% 
+microdados_tbl <- tbl(conexao,"microdados_vinculos") %>% 
   select( everything() ) %>% 
   filter( 
     ano >= 2013 ,sigla_uf == "CE"
-  )  %>%  head(5000)
+  )
 
 
-# baixar todos os dados
-microdados_tbl <-  tbl(conexao,"microdados_vinculos") |> 
-  select( everything()) |> 
-  collect() 
-
-tbl(conexao, "microdados_vinculos") |> collect()
+tbl_rais_ce <- microdados_tbl |> collect()
