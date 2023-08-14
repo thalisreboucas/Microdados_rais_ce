@@ -1,8 +1,11 @@
 pacman::p_load(tidyverse, # caixa de ferramentas 
                bigrquery, # Para acessar o query do google
                plotly,
-               basededados
-               
+               leaflet,
+               geobr,
+               leaflet.extras,
+               sf,
+               viridis
 )
 
 # base de dados 
@@ -53,6 +56,12 @@ tbl_ce_estabelecimento <- tp |> mutate(tipo = as.character(tipo) ) |>
                                   tp,by = "tipo") 
 tbl_ce_estabelecimento <- left_join(tbl_ce_estabelecimento,
                                   ss,by = "subsetor_ibge")
+
+tbl_ce_estabelecimento <- ceps_nomes |> mutate(cep = as.character(Cep) ) |>left_join(tbl_ce_estabelecimento,ceps_nomes,by = "cep")
+
+
+
+remove(ceps_nomes,ceps)
 remove(conexao,
        microdados_tbl_estabelecimento,
        Aux_rais,tp,te,ss)
@@ -61,21 +70,68 @@ remove(conexao,
 tbl_usar <- tbl_ce_estabelecimento |> select(ano,Tipo_est,
                                  Funcionario_empresa,
                                  quantidade_vinculos_ativos,
-                                 cnae_1,cnae_2,
-                                 cep,Bairros,Subsetor)
-
-tbl_usar <- ceps_nomes |> mutate(cep = as.character(Cep) ) |>left_join(tbl_usar,ceps_nomes,by = "cep")
+                                 cnae_2_subclasse,
+                                 cep,Subsetor,Rua,Bairro)
 
 
-remove(ceps_nomes,tbl_ce_estabelecimento,ceps)
+saveRDS(tbl_usar,"tbl_usar")
+tbl_usar <- readRDS("tbl_usar")
 
 restaurantes =c("5611201", "5620101", "5620104")
 supermercados = c("4711301","4711302", "4712100")
 atacado = c("4639701", "4639702")
 
-tbl_usar |> mutate( setor =case_when(cnae_1 %in% restaurantes ~"restaurante",
-                                     cnae_2 %in% restaurantes ~"restaurante",
-                                     cnae_1 %in% supermercados ~"supermercados",
-                                     cnae_2 %in% supermercados ~"supermercados",
-                                     cnae_1 %in% atacado ~"atacado",
-                                     cnae_2 %in% atacado ~"atacado")) |>  view()
+tbl_cnae <- tbl_usar |> mutate( setor =case_when( cnae_2_subclasse %in% restaurantes ~"restaurante",
+                                      cnae_2_subclasse %in% supermercados ~"supermercados",
+                                     cnae_2_subclasse %in% atacado ~"atacado")) 
+
+tbl_cnae <- tbl_cnae |>  filter(setor %in% c("restaurantes","supermercados","atacado")) |> select(-Bairros) 
+
+remove(tbl_usar,atacado,restaurantes,supermercados,tbl_ce_estabelecimento,tbl_cnae)
+
+saveRDS(tbl_cnae,"tabela_cnae")
+tbl <- readRDS("tabela_cnae")
+
+
+total <- tbl |> dplyr::group_by(setor,Bairro) |>  
+                summarise(total = n()) |>  
+                 mutate(name_neighborhood = Bairro) |>  select(-Bairro)
+
+ceara <- geobr::read_neighborhood() |> filter(abbrev_state == "CE"#,
+                                                  #name_muni = "Fortaleza")
+)
+
+
+
+locais <- ceara |>  filter(name_muni =="Fortaleza" , name_neighborhood %in% total$name_neighborhood) |>  select(name_neighborhood,geom)  
+
+esse <- left_join(ceara,total,by = "name_neighborhood") |>  filter(setor == "atacado")
+
+bins <- c(0, 5, 10,15,20, 50, 100, 200)
+pal <- colorNumeric(palette = "magma", domain = esse$total,bins)
+
+leaflet() |> 
+  addTiles() |> 
+  addPolygons(
+    data = esse$geocm,
+    color = pal(esse$total),
+    weight = 2,
+    opacity = 1,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlightOptions = highlightOptions(
+      weight = 5,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.7,
+      bringToFront = TRUE),
+    label = paste(esse$name_district,esse$total),
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "3px 8px"),
+      textsize = "15px",
+      direction = "auto")) |> 
+  addLegend(pal = pal, values = ~esse$total, opacity = 0.7, title = NULL,
+           position = "bottomright")
+
+
